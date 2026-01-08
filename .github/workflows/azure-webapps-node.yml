@@ -34,7 +34,7 @@ jobs:
 
     steps:
     - name: Checkout 
-      uses: actions/download-checkout@v4
+      uses: actions/checkout@v4
 
     - name: 'Deploy to Azure WebApp'
       id: deploy-to-webapp
