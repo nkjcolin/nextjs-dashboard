@@ -10,6 +10,7 @@ const sql = postgres({
   database: process.env.AZURE_POSTGRESQL_DATABASE,    
   username: process.env.AZURE_POSTGRESQL_USER,        
   password: process.env.AZURE_POSTGRESQL_PASSWORD,
+  ssl: 'require',
 });
 
 async function seedUsers() {
