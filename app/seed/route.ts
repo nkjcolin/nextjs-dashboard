@@ -5,11 +5,11 @@ import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 // const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 const sql = postgres({
-  host: process.env.POSTGRES_HOST,            
+  host: process.env.AZURE_POSTGRES_HOST,            
   port: 5432,
-  database: process.env.POSTGRES_DATABASE,    
-  username: process.env.POSTGRES_USER,        
-  password: process.env.POSTGRES_PASSWORD,
+  database: process.env.AZURE_POSTGRES_DATABASE,    
+  username: process.env.AZURE_POSTGRES_USER,        
+  password: process.env.AZURE_POSTGRES_PASSWORD,
   ssl: 'require',
 });
 
