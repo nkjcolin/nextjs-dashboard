@@ -3,7 +3,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev --turbopack",
-    "start": "node ./build/standalone/server.js",
+    "start": "next start",
     "lint": "eslint ."
   },
   "dependencies": {
