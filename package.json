@@ -3,7 +3,8 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev --turbopack",
-    "start": "node ./build/standalone/server.js"
+    "start": "node ./build/standalone/server.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -20,14 +21,16 @@
     "react-dom": "latest",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3",
-    "use-debounce": "^10.0.4",
+    "use-debounce": "^10.1.0",
     "zod": "^3.25.17"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",
-    "@types/react-dom": "19.0.3"
+    "@types/react-dom": "19.0.3",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
