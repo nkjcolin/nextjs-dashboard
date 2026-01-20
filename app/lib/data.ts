@@ -1,5 +1,4 @@
-import { DefaultAzureCredential } from "@azure/identity";
-import { Client } from 'pg';
+import postgres from 'postgres';
 import {
   CustomerField,
   CustomersTableType,
@@ -10,60 +9,26 @@ import {
 } from './definitions';
 import { formatCurrency } from './utils';
 
-// Managed Identity setup
-const credential = new DefaultAzureCredential();
-let dbClient: Client | null = null;
-let tokenExpiry: number = 0;
+// const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
-// Get fresh access token
-async function getAccessToken() {
-  const accessToken = await credential.getToken('https://ossrdbms-aad.database.windows.net/.default');
-  return accessToken;
-}
-
-// Get or refresh database connection
-async function getDbClient() {
-  const now = Date.now();
-  
-  // Refresh connection if token expired or about to expire (5 min buffer)
-  if (!dbClient || now >= tokenExpiry - 300000) {
-    // Close existing connection if any
-    if (dbClient) {
-      await dbClient.end();
-    }
-    
-    const accessToken = await getAccessToken();
-    tokenExpiry = accessToken.expiresOnTimestamp;
-    
-    dbClient = new Client({
-      host: process.env.AZURE_POSTGRESQL_HOST,
-      user: process.env.AZURE_POSTGRESQL_USER,
-      password: accessToken.token,
-      database: process.env.AZURE_POSTGRESQL_DATABASE,
-      port: Number(process.env.AZURE_POSTGRESQL_PORT) || 5432,
-      ssl: process.env.AZURE_POSTGRESQL_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    });
-    
-    await dbClient.connect();
-    console.log("Database connected with managed identity");
-  }
-  
-  return dbClient;
-}
-
-// Helper function to execute queries
-async function query<T>(sql: string, params: any[] = []): Promise<T[]> {
-  const client = await getDbClient();
-  const result = await client.query(sql, params);
-  return result.rows as T[];
-}
+const sql = postgres({
+  host: process.env.AZURE_POSTGRESQL_HOST,            
+  port: 5432,
+  database: process.env.AZURE_POSTGRESQL_DATABASE,    
+  username: process.env.AZURE_POSTGRESQL_USER,        
+  password: process.env.AZURE_POSTGRESQL_PASSWORD,
+  ssl: 'require',
+});
 
 export async function fetchRevenue() {
   try {
+    // Artificially delay a response for demo purposes.
+    // Don't do this in production :)
+
     console.log('Fetching revenue data...');
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    const data = await query<Revenue>('SELECT * FROM revenue');
+    const data = await sql<Revenue[]>`SELECT * FROM revenue`;
 
     console.log('Data fetch completed after 3 seconds.');
 
@@ -76,13 +41,12 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
-    const data = await query<LatestInvoiceRaw>(`
+    const data = await sql<LatestInvoiceRaw[]>`
       SELECT invoices.amount, customers.name, customers.image_url, customers.email, invoices.id
       FROM invoices
       JOIN customers ON invoices.customer_id = customers.id
       ORDER BY invoices.date DESC
-      LIMIT 5
-    `);
+      LIMIT 5`;
 
     const latestInvoices = data.map((invoice) => ({
       ...invoice,
@@ -97,23 +61,26 @@ export async function fetchLatestInvoices() {
 
 export async function fetchCardData() {
   try {
-    const client = await getDbClient();
-    
-    const [invoiceCount, customerCount, invoiceStatus] = await Promise.all([
-      client.query('SELECT COUNT(*) FROM invoices'),
-      client.query('SELECT COUNT(*) FROM customers'),
-      client.query(`
-        SELECT
-          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
-          SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
-        FROM invoices
-      `),
+    // You can probably combine these into a single SQL query
+    // However, we are intentionally splitting them to demonstrate
+    // how to initialize multiple queries in parallel with JS.
+    const invoiceCountPromise = sql`SELECT COUNT(*) FROM invoices`;
+    const customerCountPromise = sql`SELECT COUNT(*) FROM customers`;
+    const invoiceStatusPromise = sql`SELECT
+         SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
+         SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
+         FROM invoices`;
+
+    const data = await Promise.all([
+      invoiceCountPromise,
+      customerCountPromise,
+      invoiceStatusPromise,
     ]);
 
-    const numberOfInvoices = Number(invoiceCount.rows[0].count ?? '0');
-    const numberOfCustomers = Number(customerCount.rows[0].count ?? '0');
-    const totalPaidInvoices = formatCurrency(invoiceStatus.rows[0].paid ?? '0');
-    const totalPendingInvoices = formatCurrency(invoiceStatus.rows[0].pending ?? '0');
+    const numberOfInvoices = Number(data[0][0].count ?? '0');
+    const numberOfCustomers = Number(data[1][0].count ?? '0');
+    const totalPaidInvoices = formatCurrency(data[2][0].paid ?? '0');
+    const totalPendingInvoices = formatCurrency(data[2][0].pending ?? '0');
 
     return {
       numberOfCustomers,
@@ -129,14 +96,13 @@ export async function fetchCardData() {
 
 const ITEMS_PER_PAGE = 6;
 export async function fetchFilteredInvoices(
-  searchQuery: string,
+  query: string,
   currentPage: number,
 ) {
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
   try {
-    const invoices = await query<InvoicesTable>(
-      `
+    const invoices = await sql<InvoicesTable[]>`
       SELECT
         invoices.id,
         invoices.amount,
@@ -148,16 +114,14 @@ export async function fetchFilteredInvoices(
       FROM invoices
       JOIN customers ON invoices.customer_id = customers.id
       WHERE
-        customers.name ILIKE $1 OR
-        customers.email ILIKE $1 OR
-        invoices.amount::text ILIKE $1 OR
-        invoices.date::text ILIKE $1 OR
-        invoices.status ILIKE $1
+        customers.name ILIKE ${`%${query}%`} OR
+        customers.email ILIKE ${`%${query}%`} OR
+        invoices.amount::text ILIKE ${`%${query}%`} OR
+        invoices.date::text ILIKE ${`%${query}%`} OR
+        invoices.status ILIKE ${`%${query}%`}
       ORDER BY invoices.date DESC
-      LIMIT $2 OFFSET $3
-      `,
-      [`%${searchQuery}%`, ITEMS_PER_PAGE, offset]
-    );
+      LIMIT ${ITEMS_PER_PAGE} OFFSET ${offset}
+    `;
 
     return invoices;
   } catch (error) {
@@ -166,22 +130,18 @@ export async function fetchFilteredInvoices(
   }
 }
 
-export async function fetchInvoicesPages(queryStr: string) {
+export async function fetchInvoicesPages(query: string) {
   try {
-    const data = await query<{ count: string }>(
-      `
-      SELECT COUNT(*)
-      FROM invoices
-      JOIN customers ON invoices.customer_id = customers.id
-      WHERE
-        customers.name ILIKE $1 OR
-        customers.email ILIKE $1 OR
-        invoices.amount::text ILIKE $1 OR
-        invoices.date::text ILIKE $1 OR
-        invoices.status ILIKE $1
-      `,
-      [`%${queryStr}%`]
-    );
+    const data = await sql`SELECT COUNT(*)
+    FROM invoices
+    JOIN customers ON invoices.customer_id = customers.id
+    WHERE
+      customers.name ILIKE ${`%${query}%`} OR
+      customers.email ILIKE ${`%${query}%`} OR
+      invoices.amount::text ILIKE ${`%${query}%`} OR
+      invoices.date::text ILIKE ${`%${query}%`} OR
+      invoices.status ILIKE ${`%${query}%`}
+  `;
 
     const totalPages = Math.ceil(Number(data[0].count) / ITEMS_PER_PAGE);
     return totalPages;
@@ -193,25 +153,22 @@ export async function fetchInvoicesPages(queryStr: string) {
 
 export async function fetchInvoiceById(id: string) {
   try {
-    const data = await query<InvoiceForm>(
-      `
+    const data = await sql<InvoiceForm[]>`
       SELECT
         invoices.id,
         invoices.customer_id,
         invoices.amount,
         invoices.status
       FROM invoices
-      WHERE invoices.id = $1
-      `,
-      [id]
-    );
+      WHERE invoices.id = ${id};
+    `;
 
     const invoice = data.map((invoice) => ({
       ...invoice,
       // Convert amount from cents to dollars
       amount: invoice.amount / 100,
     }));
-    console.log(invoice);
+    console.log(invoice); // Invoice is an empty array []
     return invoice[0];
   } catch (error) {
     console.error('Database Error:', error);
@@ -221,13 +178,13 @@ export async function fetchInvoiceById(id: string) {
 
 export async function fetchCustomers() {
   try {
-    const customers = await query<CustomerField>(`
+    const customers = await sql<CustomerField[]>`
       SELECT
         id,
         name
       FROM customers
       ORDER BY name ASC
-    `);
+    `;
 
     return customers;
   } catch (err) {
@@ -236,28 +193,25 @@ export async function fetchCustomers() {
   }
 }
 
-export async function fetchFilteredCustomers(queryStr: string) {
+export async function fetchFilteredCustomers(query: string) {
   try {
-    const data = await query<CustomersTableType>(
-      `
-      SELECT
-        customers.id,
-        customers.name,
-        customers.email,
-        customers.image_url,
-        COUNT(invoices.id) AS total_invoices,
-        SUM(CASE WHEN invoices.status = 'pending' THEN invoices.amount ELSE 0 END) AS total_pending,
-        SUM(CASE WHEN invoices.status = 'paid' THEN invoices.amount ELSE 0 END) AS total_paid
-      FROM customers
-      LEFT JOIN invoices ON customers.id = invoices.customer_id
-      WHERE
-        customers.name ILIKE $1 OR
-        customers.email ILIKE $1
-      GROUP BY customers.id, customers.name, customers.email, customers.image_url
-      ORDER BY customers.name ASC
-      `,
-      [`%${queryStr}%`]
-    );
+    const data = await sql<CustomersTableType[]>`
+		SELECT
+		  customers.id,
+		  customers.name,
+		  customers.email,
+		  customers.image_url,
+		  COUNT(invoices.id) AS total_invoices,
+		  SUM(CASE WHEN invoices.status = 'pending' THEN invoices.amount ELSE 0 END) AS total_pending,
+		  SUM(CASE WHEN invoices.status = 'paid' THEN invoices.amount ELSE 0 END) AS total_paid
+		FROM customers
+		LEFT JOIN invoices ON customers.id = invoices.customer_id
+		WHERE
+		  customers.name ILIKE ${`%${query}%`} OR
+        customers.email ILIKE ${`%${query}%`}
+		GROUP BY customers.id, customers.name, customers.email, customers.image_url
+		ORDER BY customers.name ASC
+	  `;
 
     const customers = data.map((customer) => ({
       ...customer,

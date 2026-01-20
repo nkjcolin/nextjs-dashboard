@@ -7,7 +7,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@azure/identity": "^4.13.0",
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/forms": "^0.5.10",
     "autoprefixer": "10.4.20",
@@ -16,7 +15,6 @@
     "mysql2": "^3.16.0",
     "next": "latest",
     "next-auth": "^5.0.0-beta.30",
-    "pg": "^8.17.1",
     "postcss": "8.5.1",
     "postgres": "^3.4.6",
     "react": "latest",
@@ -29,7 +27,6 @@
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/node": "22.10.7",
-    "@types/pg": "^8.16.0",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
     "eslint": "^9.39.2",
