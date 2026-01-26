@@ -2,21 +2,19 @@ import { NextResponse } from 'next/server'
 import postgres from 'postgres';
 import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 
-// For user-assigned identity.
-const clientId = process.env.AZURE_POSTGRESQL_UAMI_AZURE_CLIENTID;
-const credential = new DefaultAzureCredential({
-    managedIdentityClientId: clientId
-});
+// For system-assigned identity.
+const credential = new DefaultAzureCredential();
 
-// Acquire the access token.
+// // Acquire the access token.
 var accessToken = await credential.getToken('https://ossrdbms-aad.database.windows.net/.default');
 
+
 const sql = postgres({
-  host: process.env.AZURE_POSTGRESQL_UAMI_AZURE_HOST,
-  user: process.env.AZURE_POSTGRESQL_UAMI_AZURE_USER,
+  host: process.env.AZURE_POSTGRESQL_SAMI_AZURE_HOST,
+  user: process.env.AZURE_POSTGRESQL_SAMI_AZURE_USER,
   password: accessToken.token,
-  database: process.env.AZURE_POSTGRESQL_UAMI_AZURE_DATABASE,
-  port: Number(process.env.AZURE_POSTGRESQL_UAMI_AZURE_PORT) ,
+  database: process.env.AZURE_POSTGRESQL_SAMI_AZURE_DATABASE,
+  port: Number(process.env.AZURE_POSTGRESQL_SAMI_AZURE_PORT) ,
   ssl: 'require',
 });
 
@@ -37,6 +35,5 @@ export async function GET() {
   } catch (error) {
   	return Response.json({ error }, { status: 500 });
   }
-  // // Use the token and the connection information from the environment variables added by Service Connector to establish the connection.
-  // return NextResponse.json({ message: "Connected to PostgreSQL via UAMI" });
+  // return NextResponse.json({ message: "Connected to PostgreSQL via SAMI" });
 }
