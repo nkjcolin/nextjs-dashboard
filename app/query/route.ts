@@ -1,13 +1,19 @@
 import postgres from 'postgres';
+import { DefaultAzureCredential } from '@azure/identity';
 
-// const sql = postgres(process.env.POSTGRES_URL!);
+// For system-assigned identity.
+const credential = new DefaultAzureCredential();
+
+// Acquire the access token.
+var accessToken = await credential.getToken('https://ossrdbms-aad.database.windows.net/.default');
+
 
 const sql = postgres({
-  host: process.env.AZURE_POSTGRESQL_HOST,
-  port: 5432,
-  database: process.env.AZURE_POSTGRESQL_DATABASE,
-  username: process.env.AZURE_POSTGRESQL_USER,
-  password: process.env.AZURE_POSTGRESQL_PASSWORD,
+  host: process.env.AZURE_POSTGRESQL_ENTRA_AZURE_HOST,
+  user: process.env.AZURE_POSTGRESQL_ENTRA_AZURE_USER,
+  password: accessToken.token,
+  database: process.env.AZURE_POSTGRESQL_ENTRA_AZURE_DATABASE,
+  port: Number(process.env.AZURE_POSTGRESQL_ENTRA_AZURE_PORT),
   ssl: 'require',
 });
 
